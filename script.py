@@ -1,81 +1,87 @@
-import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from flask import Flask, render_template, request, redirect, send_file, flash, url_for
+from werkzeug.utils import secure_filename
 from pypdf import PdfReader, PdfWriter
 import os
+import tempfile
+import zipfile
 
-class PDFToolApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("PDF Merger and Splitter")
-        self.root.geometry("400x300")
-        self.root.resizable(False, False)
+app = Flask(__name__)
+app.secret_key = 'secretkey'  # For flashing messages
 
-        # Styling
-        self.style = ttk.Style()
-        self.style.configure("TButton", font=("Helvetica", 12), padding=10)
-        self.style.configure("TLabel", font=("Helvetica", 14), padding=10)
+UPLOAD_FOLDER = tempfile.gettempdir()
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-        # Title
-        title_label = ttk.Label(root, text="PDF Merger and Splitter", font=("Helvetica", 18, "bold"))
-        title_label.pack(pady=20)
+# Home Page
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-        # Buttons
-        merge_btn = ttk.Button(root, text="Merge PDFs", command=self.merge_pdfs)
-        merge_btn.pack(pady=10)
+# Merge PDFs
+@app.route('/merge', methods=['POST'])
+def merge_pdfs():
+    if 'files' not in request.files:
+        flash("No files uploaded!")
+        return redirect(url_for('index'))
 
-        split_btn = ttk.Button(root, text="Split PDF", command=self.split_pdf)
-        split_btn.pack(pady=10)
+    files = request.files.getlist('files')
+    if not files or files[0].filename == '':
+        flash("Please upload at least two PDF files.")
+        return redirect(url_for('index'))
 
-        exit_btn = ttk.Button(root, text="Exit", command=root.quit)
-        exit_btn.pack(pady=20)
+    writer = PdfWriter()
+    output_path = os.path.join(app.config['UPLOAD_FOLDER'], "merged_output.pdf")
+    
+    try:
+        for file in files:
+            filename = secure_filename(file.filename)
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            file.save(file_path)
 
-    def merge_pdfs(self):
-        files = filedialog.askopenfilenames(title="Select PDF files to merge", filetypes=[("PDF files", "*.pdf")])
-        if not files:
-            messagebox.showwarning("No Files", "No files selected for merging!")
-            return
+            reader = PdfReader(file_path)
+            for page in reader.pages:
+                writer.add_page(page)
         
-        output_file = filedialog.asksaveasfilename(defaultextension=".pdf", title="Save Merged PDF As", filetypes=[("PDF files", "*.pdf")])
-        if not output_file:
-            messagebox.showwarning("No Output", "No output file selected!")
-            return
-        
-        writer = PdfWriter()
-        try:
-            for pdf in files:
-                reader = PdfReader(pdf)
-                for page in reader.pages:
-                    writer.add_page(page)
-            with open(output_file, "wb") as f:
-                writer.write(f)
-            messagebox.showinfo("Success", f"Merged PDF saved as:\n{output_file}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to merge PDFs:\n{e}")
+        with open(output_path, "wb") as f:
+            writer.write(f)
 
-    def split_pdf(self):
-        input_file = filedialog.askopenfilename(title="Select PDF file to split", filetypes=[("PDF files", "*.pdf")])
-        if not input_file:
-            messagebox.showwarning("No File", "No file selected for splitting!")
-            return
-        
-        output_folder = filedialog.askdirectory(title="Select Folder to Save Split Pages")
-        if not output_folder:
-            messagebox.showwarning("No Folder", "No folder selected for output!")
-            return
-        
-        try:
-            reader = PdfReader(input_file)
+        return send_file(output_path, as_attachment=True, download_name="merged_output.pdf")
+    except Exception as e:
+        flash(f"Failed to merge PDFs: {str(e)}")
+        return redirect(url_for('index'))
+
+# Split PDF
+@app.route('/split', methods=['POST'])
+def split_pdf():
+    if 'file' not in request.files:
+        flash("No file uploaded!")
+        return redirect(url_for('index'))
+
+    file = request.files['file']
+    if file.filename == '':
+        flash("Please upload a PDF file to split.")
+        return redirect(url_for('index'))
+
+    try:
+        filename = secure_filename(file.filename)
+        file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(file_path)
+
+        reader = PdfReader(file_path)
+        zip_output_path = os.path.join(app.config['UPLOAD_FOLDER'], "split_pages.zip")
+        with zipfile.ZipFile(zip_output_path, 'w') as zipf:
             for i, page in enumerate(reader.pages):
                 writer = PdfWriter()
                 writer.add_page(page)
-                output_path = os.path.join(output_folder, f"page_{i+1}.pdf")
-                with open(output_path, "wb") as output_file:
-                    writer.write(output_file)
-            messagebox.showinfo("Success", f"Split pages saved in folder:\n{output_folder}")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to split PDF:\n{e}")
+                page_output = os.path.join(app.config['UPLOAD_FOLDER'], f"page_{i+1}.pdf")
+                with open(page_output, "wb") as f:
+                    writer.write(f)
+                zipf.write(page_output, f"page_{i+1}.pdf")
+                os.remove(page_output)
 
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = PDFToolApp(root)
-    root.mainloop()
+        return send_file(zip_output_path, as_attachment=True, download_name="split_pages.zip")
+    except Exception as e:
+        flash(f"Failed to split PDF: {str(e)}")
+        return redirect(url_for('index'))
+
+if __name__ == '__main__':
+    app.run(debug=True)

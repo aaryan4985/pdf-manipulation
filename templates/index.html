@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Merger and Splitter</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>PDF Merger and Splitter</h1>
+    <h2>Merge PDFs</h2>
+    <form method="post" action="/merge" enctype="multipart/form-data">
+        <label for="files">Select multiple PDFs to merge:</label><br>
+        <input type="file" name="files" accept="application/pdf" multiple required><br><br>
+        <button type="submit">Merge PDFs</button>
+    </form>
+
+    <h2>Split PDF</h2>
+    <form method="post" action="/split" enctype="multipart/form-data">
+        <label for="file">Select a PDF to split:</label><br>
+        <input type="file" name="file" accept="application/pdf" required><br><br>
+        <button type="submit">Split PDF</button>
+    </form>
+
+    {% with messages = get_flashed_messages() %}
+    {% if messages %}
+        <ul>
+        {% for message in messages %}
+            <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+    {% endif %}
+    {% endwith %}
+</body>
+</html>
